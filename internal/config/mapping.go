@@ -94,15 +94,25 @@ func (m *MappingConfig) ValidateColumns() error {
 }
 
 // SubstituteVariables replaces ${column_name} with values from the CSV row
-func SubstituteVariables(template string, row map[string]string) string {
-	return variableRegex.ReplaceAllStringFunc(template, func(match string) string {
+// Returns the substituted string and an error if any variables couldn't be substituted
+func SubstituteVariables(template string, row map[string]string) (string, error) {
+	missingVars := []string{}
+	result := variableRegex.ReplaceAllStringFunc(template, func(match string) string {
 		// Extract column name from ${column_name}
 		colName := match[2 : len(match)-1]
 		if value, ok := row[colName]; ok {
 			return value
 		}
+		// Track missing variable
+		missingVars = append(missingVars, colName)
 		return match // Keep original if column not found
 	})
+
+	if len(missingVars) > 0 {
+		return result, fmt.Errorf("missing columns in row data: %v", missingVars)
+	}
+
+	return result, nil
 }
 
 // extractVariables extracts all variable names from a template string
@@ -119,10 +129,32 @@ func extractVariables(template string) []string {
 
 // ParsePath parses a FHIR path like "code.coding[0].system" into segments
 func ParsePath(path string) ([]PathSegment, error) {
+	// Validate path is not empty
+	if path == "" {
+		return nil, fmt.Errorf("path cannot be empty")
+	}
+
+	// Validate no leading or trailing dots
+	if strings.HasPrefix(path, ".") {
+		return nil, fmt.Errorf("path cannot start with a dot: %s", path)
+	}
+	if strings.HasSuffix(path, ".") {
+		return nil, fmt.Errorf("path cannot end with a dot: %s", path)
+	}
+
+	// Validate no consecutive dots
+	if strings.Contains(path, "..") {
+		return nil, fmt.Errorf("path cannot contain consecutive dots: %s", path)
+	}
+
 	segments := []PathSegment{}
 	parts := strings.Split(path, ".")
 
 	for _, part := range parts {
+		// Additional validation: part should not be empty after split
+		if part == "" {
+			return nil, fmt.Errorf("empty field name in path: %s", path)
+		}
 		// Check for array index notation: field[index]
 		if strings.Contains(part, "[") {
 			openIdx := strings.Index(part, "[")
@@ -138,6 +170,14 @@ func ParsePath(path string) ([]PathSegment, error) {
 			var index int
 			if _, err := fmt.Sscanf(indexStr, "%d", &index); err != nil {
 				return nil, fmt.Errorf("invalid array index in path: %s", part)
+			}
+
+			// Validate array index is non-negative and within reasonable bounds
+			if index < 0 {
+				return nil, fmt.Errorf("negative array index %d not allowed in path: %s", index, part)
+			}
+			if index > 1000 {
+				return nil, fmt.Errorf("array index %d exceeds maximum of 1000 in path: %s", index, part)
 			}
 
 			segments = append(segments, PathSegment{

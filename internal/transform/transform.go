@@ -33,7 +33,14 @@ func (t *Transformer) Transform(row map[string]string, rowNumber int) (interface
 
 	// Apply defaults first
 	for path, value := range t.config.Defaults {
-		substituted := config.SubstituteVariables(value, row)
+		substituted, err := config.SubstituteVariables(value, row)
+		if err != nil {
+			// For defaults, log warning but continue (defaults might be literal values)
+			// Only warn if the original value contained variables
+			if strings.Contains(value, "${") {
+				return nil, fmt.Errorf("row %d: failed to substitute variables in default %s: %w", rowNumber, path, err)
+			}
+		}
 		if err := t.setFieldValue(resource, path, substituted); err != nil {
 			return nil, fmt.Errorf("row %d: failed to set default %s: %w", rowNumber, path, err)
 		}
@@ -41,7 +48,10 @@ func (t *Transformer) Transform(row map[string]string, rowNumber int) (interface
 
 	// Apply mappings (these override defaults)
 	for path, value := range t.config.Mappings {
-		substituted := config.SubstituteVariables(value, row)
+		substituted, err := config.SubstituteVariables(value, row)
+		if err != nil {
+			return nil, fmt.Errorf("row %d: failed to substitute variables in mapping %s: %w", rowNumber, path, err)
+		}
 		// Skip empty values
 		if substituted == "" {
 			continue
@@ -135,6 +145,11 @@ func (t *Transformer) setNestedFieldValue(v reflect.Value, segments []config.Pat
 
 	segment := segments[0]
 
+	// Validate field name is not empty
+	if len(segment.Field) == 0 {
+		return fmt.Errorf("empty field name in path")
+	}
+
 	// Capitalize first letter for Go struct field
 	fieldName := strings.ToUpper(segment.Field[:1]) + segment.Field[1:]
 	field := v.FieldByName(fieldName)
@@ -215,7 +230,11 @@ func (t *Transformer) setFinalValue(field reflect.Value, value string) error {
 	if field.CanAddr() {
 		unmarshaler := field.Addr().Interface()
 		if _, ok := unmarshaler.(json.Unmarshaler); ok {
-			jsonValue := []byte(`"` + value + `"`)
+			// Use json.Marshal to properly escape the value
+			jsonValue, err := json.Marshal(value)
+			if err != nil {
+				return fmt.Errorf("failed to marshal value for JSON unmarshaling: %w", err)
+			}
 			if err := json.Unmarshal(jsonValue, unmarshaler); err == nil {
 				return nil
 			}
@@ -254,7 +273,12 @@ func (t *Transformer) setFinalValue(field reflect.Value, value string) error {
 
 	case reflect.Struct:
 		// Try to unmarshal as JSON for complex types
-		if err := json.Unmarshal([]byte(`"`+value+`"`), field.Addr().Interface()); err != nil {
+		// Use json.Marshal to properly escape special characters
+		jsonValue, err := json.Marshal(value)
+		if err != nil {
+			return fmt.Errorf("failed to marshal value: %w", err)
+		}
+		if err := json.Unmarshal(jsonValue, field.Addr().Interface()); err != nil {
 			return fmt.Errorf("cannot set struct field with value %s: %w", value, err)
 		}
 		return nil

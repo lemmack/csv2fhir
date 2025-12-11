@@ -1,0 +1,4 @@
+record_id,patient_id,test_name,result_value
+OBS001,PAT123,"Test with ""quotes""",100
+OBS002,PAT456,Test with special chars,200
+OBS003,PAT789,"Test with chars: <>&",300

@@ -1,0 +1,10 @@
+resource: Observation
+id_column: record_id
+
+mappings:
+  subject.reference: "Patient/${patient_id}"
+  code.text: "${test_name}"
+  valueQuantity.value: "${result_value}"
+
+defaults:
+  status: "final"

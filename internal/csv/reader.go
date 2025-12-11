@@ -67,10 +67,12 @@ func (r *Reader) Read() (*Row, error) {
 	r.rowNumber++
 
 	// Convert to map
+	// CRITICAL: Copy values since ReuseRecord=true means record slice is reused
 	rowData := make(map[string]string, len(r.headers))
 	for i, header := range r.headers {
 		if i < len(record) {
-			rowData[header] = record[i]
+			// Create a copy of the string value to avoid shared references
+			rowData[header] = string([]byte(record[i]))
 		} else {
 			rowData[header] = "" // Handle missing columns
 		}

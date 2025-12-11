@@ -1,0 +1,55 @@
+{
+  "type": "collection",
+  "total": 3,
+  "entry": [
+    {
+      "resource": {
+        "id": "OBS001",
+        "status": "final",
+        "code": {
+          "text": "Test with \"quotes\""
+        },
+        "subject": {
+          "reference": "Patient/PAT123"
+        },
+        "valueQuantity": {
+          "value": 100
+        },
+        "resourceType": "Observation"
+      }
+    },
+    {
+      "resource": {
+        "id": "OBS002",
+        "status": "final",
+        "code": {
+          "text": "Test with special chars"
+        },
+        "subject": {
+          "reference": "Patient/PAT456"
+        },
+        "valueQuantity": {
+          "value": 200
+        },
+        "resourceType": "Observation"
+      }
+    },
+    {
+      "resource": {
+        "id": "OBS003",
+        "status": "final",
+        "code": {
+          "text": "Test with chars: \u003c\u003e\u0026"
+        },
+        "subject": {
+          "reference": "Patient/PAT789"
+        },
+        "valueQuantity": {
+          "value": 300
+        },
+        "resourceType": "Observation"
+      }
+    }
+  ],
+  "resourceType": "Bundle"
+}
