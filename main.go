@@ -25,6 +25,7 @@ func main() {
 	formatStrShort := flag.String("f", "", "Output format (short)")
 	delimiter := flag.String("delimiter", ",", "CSV delimiter")
 	delimiterShort := flag.String("d", "", "CSV delimiter (short)")
+	maxResources := flag.Int("max-resources", 10000, "Maximum resources in memory for bundle format (default: 10000)")
 
 	flag.Parse()
 
@@ -73,12 +74,12 @@ func main() {
 	}
 
 	// Run the conversion
-	if err := run(*inputFile, *mappingFile, *outputFile, format, delimiterRune); err != nil {
+	if err := run(*inputFile, *mappingFile, *outputFile, format, delimiterRune, *maxResources); err != nil {
 		log.Fatalf("Error: %v", err)
 	}
 }
 
-func run(inputPath, mappingPath, outputPath string, format output.Format, delimiter rune) error {
+func run(inputPath, mappingPath, outputPath string, format output.Format, delimiter rune, maxResources int) error {
 	// Load mapping configuration
 	fmt.Fprintf(os.Stderr, "Loading mapping configuration from %s...\n", mappingPath)
 	cfg, err := config.LoadMapping(mappingPath)
@@ -107,8 +108,8 @@ func run(inputPath, mappingPath, outputPath string, format output.Format, delimi
 	// Create transformer
 	transformer := transform.NewTransformer(cfg)
 
-	// Create output writer
-	writer, err := output.NewWriter(outputPath, format)
+	// Create output writer with memory limit
+	writer, err := output.NewWriterWithLimit(outputPath, format, maxResources)
 	if err != nil {
 		return fmt.Errorf("failed to create output writer: %w", err)
 	}

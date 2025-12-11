@@ -38,6 +38,7 @@ csv2fhir --input data.csv --mapping mapping.yaml --output output.ndjson --format
 - `--output`, `-o`: Output file path (default: stdout)
 - `--format`, `-f`: Output format, either `bundle` or `ndjson` (default: bundle)
 - `--delimiter`, `-d`: CSV delimiter (default: comma)
+- `--max-resources`: Maximum resources in memory for bundle format (default: 10000)
 
 ## YAML Mapping Format
 
@@ -248,7 +249,10 @@ Errors are reported to stderr, and the tool continues processing remaining rows 
 The tool uses streaming CSV processing, reading one row at a time rather than loading the entire file into memory. This allows it to efficiently handle CSV files of any size.
 
 For large files:
-- Consider using NDJSON format for streaming output
+- **Bundle format**: Limited to 10,000 resources in memory by default (configurable via `--max-resources`)
+  - Warning displayed at 90% of limit
+  - Error if limit exceeded
+- **NDJSON format**: No memory limits - streams directly to output (recommended for large files)
 - Monitor progress via stderr output (reports every 100 rows)
 
 ## Project Structure
