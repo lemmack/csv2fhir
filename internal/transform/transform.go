@@ -9,7 +9,6 @@ import (
 
 	"csv2fhir/internal/config"
 	"csv2fhir/internal/validation"
-	"github.com/samply/golang-fhir-models/fhir-models/fhir"
 )
 
 // Transformer handles CSV to FHIR transformation
@@ -103,26 +102,13 @@ func (t *Transformer) TransformWithValidation(row map[string]string, rowNumber i
 
 // createResource creates a new FHIR resource of the configured type
 func (t *Transformer) createResource() (interface{}, error) {
-	switch strings.ToLower(t.config.Resource) {
-	case "observation":
-		return &fhir.Observation{}, nil
-	case "patient":
-		return &fhir.Patient{}, nil
-	case "condition":
-		return &fhir.Condition{}, nil
-	case "medicationrequest":
-		return &fhir.MedicationRequest{}, nil
-	case "procedure":
-		return &fhir.Procedure{}, nil
-	case "encounter":
-		return &fhir.Encounter{}, nil
-	case "diagnosticreport":
-		return &fhir.DiagnosticReport{}, nil
-	case "specimen":
-		return &fhir.Specimen{}, nil
-	default:
+	resourceType, ok := GetResourceType(t.config.Resource)
+	if !ok {
 		return nil, fmt.Errorf("unsupported resource type: %s", t.config.Resource)
 	}
+
+	// Create a new instance of the resource type
+	return reflect.New(resourceType).Interface(), nil
 }
 
 // setResourceID sets the ID field of a FHIR resource
@@ -186,11 +172,6 @@ func (t *Transformer) setNestedFieldValue(v reflect.Value, segments []config.Pat
 		return fmt.Errorf("field %s not found in %s", fieldName, v.Type().Name())
 	}
 
-	// If this is the last segment, set the value
-	if len(segments) == 1 {
-		return t.setFinalValue(field, value)
-	}
-
 	// Handle array index if present
 	if segment.Index != nil {
 		if field.Kind() != reflect.Slice && field.Kind() != reflect.Array {
@@ -214,7 +195,15 @@ func (t *Transformer) setNestedFieldValue(v reflect.Value, segments []config.Pat
 			elem.Set(newElem)
 		}
 
+		if len(segments) == 1 {
+			return t.setFinalValue(elem, value)
+		}
 		return t.setNestedFieldValue(elem, segments[1:], value)
+	}
+
+	// If this is the last segment, set the value
+	if len(segments) == 1 {
+		return t.setFinalValue(field, value)
 	}
 
 	// Handle pointer fields

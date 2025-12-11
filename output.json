@@ -1,0 +1,127 @@
+{
+  "type": "collection",
+  "total": 5,
+  "entry": [
+    {
+      "resource": {
+        "id": "OBS001",
+        "status": "final",
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2339-0",
+              "display": "Glucose"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/PAT123"
+        },
+        "effectiveDateTime": "2024-01-15T10:30:00Z",
+        "valueQuantity": {
+          "value": 95,
+          "unit": "mg/dL"
+        },
+        "resourceType": "Observation"
+      }
+    },
+    {
+      "resource": {
+        "id": "OBS002",
+        "status": "final",
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2085-9",
+              "display": "HDL Cholesterol"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/PAT123"
+        },
+        "effectiveDateTime": "2024-01-15T10:30:00Z",
+        "valueQuantity": {
+          "value": 55,
+          "unit": "mg/dL"
+        },
+        "resourceType": "Observation"
+      }
+    },
+    {
+      "resource": {
+        "id": "OBS003",
+        "status": "final",
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2339-0",
+              "display": "Glucose"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/PAT456"
+        },
+        "effectiveDateTime": "2024-01-16T09:15:00Z",
+        "valueQuantity": {
+          "value": 110,
+          "unit": "mg/dL"
+        },
+        "resourceType": "Observation"
+      }
+    },
+    {
+      "resource": {
+        "id": "OBS004",
+        "status": "final",
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2571-8",
+              "display": "Triglycerides"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/PAT456"
+        },
+        "effectiveDateTime": "2024-01-16T09:15:00Z",
+        "valueQuantity": {
+          "value": 150,
+          "unit": "mg/dL"
+        },
+        "resourceType": "Observation"
+      }
+    },
+    {
+      "resource": {
+        "id": "OBS005",
+        "status": "final",
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8480-6",
+              "display": "Systolic Blood Pressure"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/PAT789"
+        },
+        "effectiveDateTime": "2024-01-17T14:00:00Z",
+        "valueQuantity": {
+          "value": 120,
+          "unit": "mmHg"
+        },
+        "resourceType": "Observation"
+      }
+    }
+  ],
+  "resourceType": "Bundle"
+}

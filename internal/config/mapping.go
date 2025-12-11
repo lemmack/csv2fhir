@@ -11,11 +11,11 @@ import (
 
 // MappingConfig represents the YAML mapping configuration
 type MappingConfig struct {
-	Resource  string            `yaml:"resource"`
-	IDColumn  string            `yaml:"id_column"`
-	Mappings  map[string]string `yaml:"mappings"`
-	Defaults  map[string]string `yaml:"defaults"`
-	csvColumns map[string]bool  // Track available CSV columns for validation
+	Resource   string            `yaml:"resource"`
+	IDColumn   string            `yaml:"id_column"`
+	Mappings   map[string]string `yaml:"mappings"`
+	Defaults   map[string]string `yaml:"defaults"`
+	csvColumns map[string]bool   // Track available CSV columns for validation
 }
 
 // PathSegment represents a part of a FHIR path (field name or array index)
@@ -93,20 +93,52 @@ func (m *MappingConfig) ValidateColumns() error {
 	return nil
 }
 
-// SubstituteVariables replaces ${column_name} with values from the CSV row
+// SubstituteVariables replaces ${column_name} or ${func:name:column_name} with values from the CSV row
 // Returns the substituted string and an error if any variables couldn't be substituted
 func SubstituteVariables(template string, row map[string]string) (string, error) {
 	missingVars := []string{}
+	var processingErr error
+
 	result := variableRegex.ReplaceAllStringFunc(template, func(match string) string {
-		// Extract column name from ${column_name}
-		colName := match[2 : len(match)-1]
+		// Remove ${ and }
+		content := match[2 : len(match)-1]
+
+		var colName string
+		var funcName string
+		var args []string
+
+		// Check for function syntax: func:name:col or func:name:arg1:col
+		parts := strings.Split(content, ":")
+		if len(parts) >= 3 && parts[0] == "func" {
+			funcName = parts[1]
+			colName = parts[len(parts)-1]
+			if len(parts) > 3 {
+				args = parts[2 : len(parts)-1]
+			}
+		} else {
+			colName = content
+		}
+
 		if value, ok := row[colName]; ok {
+			if funcName != "" {
+				transformed, err := applyFunction(funcName, value, args)
+				if err != nil {
+					processingErr = fmt.Errorf("function error in %s: %w", match, err)
+					return match
+				}
+				return transformed
+			}
 			return value
 		}
+
 		// Track missing variable
 		missingVars = append(missingVars, colName)
 		return match // Keep original if column not found
 	})
+
+	if processingErr != nil {
+		return "", processingErr
+	}
 
 	if len(missingVars) > 0 {
 		return result, fmt.Errorf("missing columns in row data: %v", missingVars)
@@ -115,13 +147,57 @@ func SubstituteVariables(template string, row map[string]string) (string, error)
 	return result, nil
 }
 
+// applyFunction applies a transformation function to a value
+func applyFunction(name string, value string, args []string) (string, error) {
+	switch name {
+	case "upper":
+		return strings.ToUpper(value), nil
+	case "lower":
+		return strings.ToLower(value), nil
+	case "trim":
+		return strings.TrimSpace(value), nil
+	case "split":
+		// Usage: func:split:index:delimiter:col  -> wait, parser above assumes last part is col.
+		// Let's refine parsing or arguments.
+		// Current logic: func:name:arg1:arg2:col
+		// So func:split:0:,:col means func=split, args=["0", ","], col=col
+		if len(args) < 2 {
+			return "", fmt.Errorf("split requires index and delimiter")
+		}
+		indexStr := args[0]
+		delimiter := args[1]
+
+		parts := strings.Split(value, delimiter)
+
+		// Let's use logic from ParsePath for index
+		var idx int
+		if _, err := fmt.Sscanf(indexStr, "%d", &idx); err != nil {
+			return "", fmt.Errorf("invalid index for split: %s", indexStr)
+		}
+
+		if idx >= 0 && idx < len(parts) {
+			return strings.TrimSpace(parts[idx]), nil
+		}
+		return "", nil // Return empty if out of bounds? Or error? Standard safe behavior is empty.
+	default:
+		return "", fmt.Errorf("unknown function: %s", name)
+	}
+}
+
 // extractVariables extracts all variable names from a template string
 func extractVariables(template string) []string {
 	matches := variableRegex.FindAllStringSubmatch(template, -1)
 	vars := make([]string, 0, len(matches))
 	for _, match := range matches {
 		if len(match) > 1 {
-			vars = append(vars, match[1])
+			content := match[1]
+			parts := strings.Split(content, ":")
+			if len(parts) >= 3 && parts[0] == "func" {
+				// Last part is column name
+				vars = append(vars, parts[len(parts)-1])
+			} else {
+				vars = append(vars, content)
+			}
 		}
 	}
 	return vars

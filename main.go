@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"sync"
 
 	"csv2fhir/internal/config"
 	"csv2fhir/internal/csv"
@@ -129,11 +130,98 @@ func run(inputPath, mappingPath, outputPath string, format output.Format, delimi
 	}
 	defer writer.Close()
 
-	// Process CSV rows
-	fmt.Fprintf(os.Stderr, "Processing CSV rows...\n")
+	// Initialize counters
 	rowCount := 0
 	errorCount := 0
 	validationErrorCount := 0
+
+	// Create channels for parallel processing
+	type job struct {
+		data      map[string]string
+		rowNumber int
+	}
+
+	type result struct {
+		resource         interface{}
+		validationErrors []validation.ValidationError
+		err              error
+		rowNumber        int
+	}
+
+	// Worker configuration
+	numWorkers := 4
+	jobs := make(chan job, numWorkers*4)
+	results := make(chan result, numWorkers*4)
+
+	var wg sync.WaitGroup
+
+	// Start workers
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range jobs {
+				var res result
+				res.rowNumber = j.rowNumber
+
+				if enableValidation {
+					res.resource, res.validationErrors, res.err = transformer.TransformWithValidation(j.data, j.rowNumber)
+				} else {
+					res.resource, res.err = transformer.Transform(j.data, j.rowNumber)
+				}
+				results <- res
+			}
+		}()
+	}
+
+	// Closer goroutine
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Start writer goroutine (Consumer)
+	done := make(chan bool)
+	go func() {
+		for res := range results {
+			// Note: Parallel processing might reorder rows.
+
+			if res.err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: %v\n", res.err)
+				errorCount++
+				continue
+			}
+
+			// Handle validation errors
+			if len(res.validationErrors) > 0 {
+				validationErrorCount++
+				formatted := validation.FormatErrors(res.validationErrors, res.rowNumber)
+
+				if validationLevel == "error" {
+					fmt.Fprintf(os.Stderr, "%s\n", formatted)
+					errorCount++
+					continue
+				} else {
+					fmt.Fprintf(os.Stderr, "%s\n", formatted)
+				}
+			}
+
+			// Write resource to output
+			if err := writer.Write(res.resource); err != nil {
+				fmt.Fprintf(os.Stderr, "Error writing resource: %v\n", err)
+				errorCount++
+			}
+
+			rowCount++
+			if rowCount%100 == 0 {
+				fmt.Fprintf(os.Stderr, "Processed %d rows...\n", rowCount)
+			}
+		}
+		done <- true
+	}()
+
+	// Feed the workers (Producer)
+	fmt.Fprintf(os.Stderr, "Processing CSV rows (using %d workers)...\n", numWorkers)
 
 	for {
 		row, err := csvReader.Read()
@@ -144,48 +232,12 @@ func run(inputPath, mappingPath, outputPath string, format output.Format, delimi
 			return fmt.Errorf("failed to read CSV row: %w", err)
 		}
 
-		// Transform row to FHIR resource (with or without validation)
-		var resource interface{}
-		var validationErrors []validation.ValidationError
-
-		if enableValidation {
-			resource, validationErrors, err = transformer.TransformWithValidation(row.Data, row.RowNumber)
-		} else {
-			resource, err = transformer.Transform(row.Data, row.RowNumber)
-		}
-
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
-			errorCount++
-			continue
-		}
-
-		// Handle validation errors
-		if len(validationErrors) > 0 {
-			validationErrorCount++
-			formatted := validation.FormatErrors(validationErrors, row.RowNumber)
-
-			if validationLevel == "error" {
-				// Fail on validation errors
-				fmt.Fprintf(os.Stderr, "%s\n", formatted)
-				errorCount++
-				continue
-			} else {
-				// Log as warnings and continue
-				fmt.Fprintf(os.Stderr, "%s\n", formatted)
-			}
-		}
-
-		// Write resource to output
-		if err := writer.Write(resource); err != nil {
-			return fmt.Errorf("failed to write resource: %w", err)
-		}
-
-		rowCount++
-		if rowCount%100 == 0 {
-			fmt.Fprintf(os.Stderr, "Processed %d rows...\n", rowCount)
-		}
+		jobs <- job{data: row.Data, rowNumber: row.RowNumber}
 	}
+	close(jobs)
+
+	// Wait for writer to finish
+	<-done
 
 	fmt.Fprintf(os.Stderr, "Completed! Processed %d rows (%d errors", rowCount, errorCount)
 	if enableValidation {
