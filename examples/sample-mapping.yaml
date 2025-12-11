@@ -1,0 +1,15 @@
+resource: Observation
+id_column: record_id
+
+mappings:
+  subject.reference: "Patient/${patient_id}"
+  code.coding[0].system: "http://loinc.org"
+  code.coding[0].code: "${loinc_code}"
+  code.coding[0].display: "${test_name}"
+  valueQuantity.value: "${result_value}"
+  valueQuantity.unit: "${unit}"
+  effectiveDateTime: "${observation_date}"
+  status: "${status}"
+
+defaults:
+  status: "final"

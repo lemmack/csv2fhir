@@ -1,0 +1,20 @@
+# Binaries
+csv2fhir
+csv2fhir.exe
+*.exe
+
+# Test outputs
+examples/output.json
+examples/output.ndjson
+
+# Go
+*.o
+*.a
+*.so
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
