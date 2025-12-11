@@ -11,6 +11,7 @@ import (
 	"csv2fhir/internal/csv"
 	"csv2fhir/internal/output"
 	"csv2fhir/internal/transform"
+	"csv2fhir/internal/validation"
 )
 
 func main() {
@@ -26,6 +27,8 @@ func main() {
 	delimiter := flag.String("delimiter", ",", "CSV delimiter")
 	delimiterShort := flag.String("d", "", "CSV delimiter (short)")
 	maxResources := flag.Int("max-resources", 10000, "Maximum resources in memory for bundle format (default: 10000)")
+	validate := flag.Bool("validate", false, "Enable FHIR validation")
+	validationLevel := flag.String("validation-level", "error", "Validation level: error (fail on errors) or warn (log warnings)")
 
 	flag.Parse()
 
@@ -74,12 +77,12 @@ func main() {
 	}
 
 	// Run the conversion
-	if err := run(*inputFile, *mappingFile, *outputFile, format, delimiterRune, *maxResources); err != nil {
+	if err := run(*inputFile, *mappingFile, *outputFile, format, delimiterRune, *maxResources, *validate, *validationLevel); err != nil {
 		log.Fatalf("Error: %v", err)
 	}
 }
 
-func run(inputPath, mappingPath, outputPath string, format output.Format, delimiter rune, maxResources int) error {
+func run(inputPath, mappingPath, outputPath string, format output.Format, delimiter rune, maxResources int, enableValidation bool, validationLevel string) error {
 	// Load mapping configuration
 	fmt.Fprintf(os.Stderr, "Loading mapping configuration from %s...\n", mappingPath)
 	cfg, err := config.LoadMapping(mappingPath)
@@ -105,8 +108,19 @@ func run(inputPath, mappingPath, outputPath string, format output.Format, delimi
 	fmt.Fprintf(os.Stderr, "Resource type: %s\n", cfg.Resource)
 	fmt.Fprintf(os.Stderr, "Output format: %s\n", format)
 
-	// Create transformer
-	transformer := transform.NewTransformer(cfg)
+	// Create transformer with optional validation
+	var transformer *transform.Transformer
+	if enableValidation {
+		fmt.Fprintf(os.Stderr, "FHIR validation enabled (level: %s)\n", validationLevel)
+		validator := validation.NewCompositeValidator(
+			validation.NewRequiredFieldsValidator(),
+			validation.NewDateTimeValidator(),
+			validation.NewReferenceValidator(),
+		)
+		transformer = transform.NewTransformerWithValidator(cfg, validator)
+	} else {
+		transformer = transform.NewTransformer(cfg)
+	}
 
 	// Create output writer with memory limit
 	writer, err := output.NewWriterWithLimit(outputPath, format, maxResources)
@@ -119,6 +133,7 @@ func run(inputPath, mappingPath, outputPath string, format output.Format, delimi
 	fmt.Fprintf(os.Stderr, "Processing CSV rows...\n")
 	rowCount := 0
 	errorCount := 0
+	validationErrorCount := 0
 
 	for {
 		row, err := csvReader.Read()
@@ -129,12 +144,36 @@ func run(inputPath, mappingPath, outputPath string, format output.Format, delimi
 			return fmt.Errorf("failed to read CSV row: %w", err)
 		}
 
-		// Transform row to FHIR resource
-		resource, err := transformer.Transform(row.Data, row.RowNumber)
+		// Transform row to FHIR resource (with or without validation)
+		var resource interface{}
+		var validationErrors []validation.ValidationError
+
+		if enableValidation {
+			resource, validationErrors, err = transformer.TransformWithValidation(row.Data, row.RowNumber)
+		} else {
+			resource, err = transformer.Transform(row.Data, row.RowNumber)
+		}
+
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
 			errorCount++
 			continue
+		}
+
+		// Handle validation errors
+		if len(validationErrors) > 0 {
+			validationErrorCount++
+			formatted := validation.FormatErrors(validationErrors, row.RowNumber)
+
+			if validationLevel == "error" {
+				// Fail on validation errors
+				fmt.Fprintf(os.Stderr, "%s\n", formatted)
+				errorCount++
+				continue
+			} else {
+				// Log as warnings and continue
+				fmt.Fprintf(os.Stderr, "%s\n", formatted)
+			}
 		}
 
 		// Write resource to output
@@ -148,7 +187,12 @@ func run(inputPath, mappingPath, outputPath string, format output.Format, delimi
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Completed! Processed %d rows (%d errors)\n", rowCount, errorCount)
+	fmt.Fprintf(os.Stderr, "Completed! Processed %d rows (%d errors", rowCount, errorCount)
+	if enableValidation {
+		fmt.Fprintf(os.Stderr, ", %d validation issues)\n", validationErrorCount)
+	} else {
+		fmt.Fprintf(os.Stderr, ")\n")
+	}
 
 	return nil
 }

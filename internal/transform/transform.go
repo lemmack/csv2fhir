@@ -8,18 +8,29 @@ import (
 	"strings"
 
 	"csv2fhir/internal/config"
+	"csv2fhir/internal/validation"
 	"github.com/samply/golang-fhir-models/fhir-models/fhir"
 )
 
 // Transformer handles CSV to FHIR transformation
 type Transformer struct {
-	config *config.MappingConfig
+	config    *config.MappingConfig
+	validator validation.Validator
 }
 
 // NewTransformer creates a new transformer with the given mapping config
 func NewTransformer(cfg *config.MappingConfig) *Transformer {
 	return &Transformer{
-		config: cfg,
+		config:    cfg,
+		validator: nil, // Validation is optional
+	}
+}
+
+// NewTransformerWithValidator creates a new transformer with validation enabled
+func NewTransformerWithValidator(cfg *config.MappingConfig, validator validation.Validator) *Transformer {
+	return &Transformer{
+		config:    cfg,
+		validator: validator,
 	}
 }
 
@@ -71,6 +82,23 @@ func (t *Transformer) Transform(row map[string]string, rowNumber int) (interface
 	}
 
 	return resource, nil
+}
+
+// TransformWithValidation converts a CSV row to a FHIR resource and validates it
+func (t *Transformer) TransformWithValidation(row map[string]string, rowNumber int) (interface{}, []validation.ValidationError, error) {
+	// Transform the resource
+	resource, err := t.Transform(row, rowNumber)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Validate if validator is set
+	var validationErrors []validation.ValidationError
+	if t.validator != nil {
+		validationErrors = t.validator.Validate(resource)
+	}
+
+	return resource, validationErrors, nil
 }
 
 // createResource creates a new FHIR resource of the configured type

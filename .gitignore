@@ -3,9 +3,12 @@ csv2fhir
 csv2fhir.exe
 *.exe
 
+
 # Test outputs
 examples/output.json
 examples/output.ndjson
+coverage.out
+
 
 # Go
 *.o
@@ -15,6 +18,7 @@ examples/output.ndjson
 # IDE
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
 *~
